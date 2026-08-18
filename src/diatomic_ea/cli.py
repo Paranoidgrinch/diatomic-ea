@@ -1,4 +1,4 @@
-﻿"""Command-line interface for DiatomicEA."""
+"""Command-line interface for DiatomicEA."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 from collections.abc import Sequence
 
 from diatomic_ea import __version__
+from diatomic_ea.config import build_compute_config
 from diatomic_ea.resources import detect_cpu_resources
 
 
@@ -19,6 +20,31 @@ def _show_system_info() -> int:
     print(f"Physical CPU cores : {resources.physical_cores}")
     print(f"Logical CPU cores  : {resources.logical_cores}")
     print(f"Recommended workers: {resources.recommended_workers}")
+
+    return 0
+
+
+def _show_compute_config(workers: int | None) -> int:
+    resources = detect_cpu_resources()
+
+    try:
+        config = build_compute_config(
+            workers=workers,
+            resources=resources,
+        )
+    except ValueError as exc:
+        print(f"Invalid compute configuration: {exc}")
+        return 2
+
+    print("Compute configuration")
+    print("---------------------")
+    print(f"Workers            : {config.workers}")
+    print(f"Threads per worker : {config.threads_per_worker}")
+    print()
+    print("Worker thread limits")
+
+    for name, value in config.worker_environment().items():
+        print(f"{name}={value}")
 
     return 0
 
@@ -46,6 +72,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show detected CPU resources.",
     )
 
+    config_parser = subparsers.add_parser(
+        "compute-config",
+        help="Show calculation resource configuration.",
+    )
+    config_parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Number of calculation workers to use.",
+    )
+
     return parser
 
 
@@ -56,6 +93,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "system-info":
         return _show_system_info()
+
+    if args.command == "compute-config":
+        return _show_compute_config(args.workers)
 
     parser.print_help()
     return 0
