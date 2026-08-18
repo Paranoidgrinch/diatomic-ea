@@ -8,8 +8,7 @@ from concurrent.futures import (
     ProcessPoolExecutor,
     as_completed,
 )
-from dataclasses import dataclass
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from diatomic_ea.grid import FastGridPlan
 from diatomic_ea.progress import (
@@ -18,22 +17,12 @@ from diatomic_ea.progress import (
 )
 from diatomic_ea.single_point import (
     SinglePointResult,
-    SinglePointTask,
     run_pyscf_single_point,
 )
 
 
 InputT = TypeVar("InputT")
 OutputT = TypeVar("OutputT")
-
-
-@dataclass(frozen=True, slots=True)
-class ProcessBatchResult:
-    """Results from one ordered process batch."""
-
-    results: tuple[object, ...]
-    submitted: int
-    completed: int
 
 
 def execute_process_batch(
@@ -43,11 +32,18 @@ def execute_process_batch(
     max_workers: int,
     reporter: ProgressReporter | None = None,
     stage: CalculationStage = CalculationStage.FAST_GRID,
+    result_callback: (
+        Callable[[InputT, OutputT], None] | None
+    ) = None,
 ) -> tuple[OutputT, ...]:
     """Execute independent tasks in spawned worker processes.
 
     Results are returned in the same order as the supplied items,
     regardless of the order in which worker processes finish.
+
+    The optional result callback runs in the parent process immediately
+    after each worker result becomes available. This allows crash-resistant
+    persistence without coupling worker processes to CSV or GUI code.
     """
     if max_workers < 1:
         raise ValueError(
@@ -72,8 +68,10 @@ def execute_process_batch(
         "spawn"
     )
 
-    results: list[OutputT | None] = [
-        None
+    missing = object()
+
+    results: list[object] = [
+        missing
         for _ in items
     ]
 
@@ -91,43 +89,55 @@ def execute_process_batch(
             for index, item in enumerate(items)
         }
 
-        try:
-            for future in as_completed(futures):
-                index = futures[future]
+        for future in as_completed(futures):
+            index = futures[future]
 
-                try:
-                    result = future.result()
-                except Exception as exc:
-                    if reporter is not None:
-                        reporter.warning(
-                            (
-                                f"Worker task {index + 1} "
-                                f"failed: {exc}"
-                            ),
-                            stage=stage,
-                        )
+            try:
+                result = future.result()
 
-                    for pending in futures:
-                        pending.cancel()
-
-                    raise
-
-                results[index] = result
-                completed += 1
-
+            except Exception as exc:
                 if reporter is not None:
-                    reporter.advance(
-                        stage,
-                        completed=completed,
-                        total=total,
-                        message=(
-                            f"Completed task "
-                            f"{completed} of {total}."
+                    reporter.warning(
+                        (
+                            f"Worker task {index + 1} "
+                            f"failed: {exc}"
                         ),
+                        stage=stage,
                     )
 
-        finally:
-            pass
+                for pending in futures:
+                    pending.cancel()
+
+                raise
+
+            results[index] = result
+
+            if result_callback is not None:
+                result_callback(
+                    items[index],
+                    result,
+                )
+
+            completed += 1
+
+            if reporter is not None:
+                reporter.advance(
+                    stage,
+                    completed=completed,
+                    total=total,
+                    message=(
+                        f"Completed task "
+                        f"{completed} of {total}."
+                    ),
+                )
+
+    if any(
+        result is missing
+        for result in results
+    ):
+        raise RuntimeError(
+            "Process batch finished with missing results."
+        )
 
     if reporter is not None:
         reporter.stage_completed(
@@ -137,18 +147,9 @@ def execute_process_batch(
             ),
         )
 
-    if any(
-        result is None
-        for result in results
-    ):
-        raise RuntimeError(
-            "Process batch finished with missing results."
-        )
-
     return tuple(
-        result
+        cast(OutputT, result)
         for result in results
-        if result is not None
     )
 
 
@@ -158,13 +159,11 @@ def execute_fast_grid(
     max_workers: int,
     reporter: ProgressReporter | None = None,
 ) -> tuple[SinglePointResult, ...]:
-    """Execute all single points in a fast-grid plan."""
-    results = execute_process_batch(
+    """Execute every single point in a fast-grid plan."""
+    return execute_process_batch(
         plan.tasks,
         worker=run_pyscf_single_point,
         max_workers=max_workers,
         reporter=reporter,
         stage=CalculationStage.FAST_GRID,
     )
-
-    return tuple(results)
