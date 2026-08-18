@@ -9,6 +9,7 @@ from diatomic_ea import __version__
 from diatomic_ea.config import build_compute_config
 from diatomic_ea.molecule import DiatomicMolecule
 from diatomic_ea.resources import detect_cpu_resources
+from diatomic_ea.schema_f import SCHEMA_F
 from diatomic_ea.smoke import run_system_smoke_test
 
 
@@ -81,6 +82,53 @@ def _show_molecule(
 
     return 0
 
+
+def _show_method_info() -> int:
+    print("Schema F")
+    print("========")
+    print(f"Schema ID           : {SCHEMA_F.schema_id}")
+    print(
+        "Reference PySCF     : "
+        f"{SCHEMA_F.reference_pyscf_version}"
+    )
+    print(
+        "Electronic method   : "
+        f"{SCHEMA_F.electronic_structure_method}"
+    )
+    print(
+        "Functionals         : "
+        + ", ".join(SCHEMA_F.functionals)
+    )
+    print(
+        "Fast-grid bases     : "
+        + ", ".join(SCHEMA_F.fast_bases)
+    )
+    print(
+        "Fast-grid step      : "
+        f"{SCHEMA_F.fast_grid.step_angstrom} A"
+    )
+    print(
+        "QZVPD basis         : "
+        f"{SCHEMA_F.refinement.basis}"
+    )
+    print(
+        "QZVPD window        : +/-"
+        f"{SCHEMA_F.refinement.window_angstrom} A"
+    )
+    print(
+        "QZVPD step          : "
+        f"{SCHEMA_F.refinement.grid.step_angstrom} A"
+    )
+    print(
+        "Max spins / charge  : "
+        f"{SCHEMA_F.refinement.max_spins_per_charge}"
+    )
+    print()
+    print(
+        "Schema F is a fixed scientific preset."
+    )
+
+    return 0
 
 def _run_smoke_test(
     output_dir: str,
@@ -182,6 +230,10 @@ def build_parser() -> argparse.ArgumentParser:
     molecule_parser.add_argument("atom_a")
     molecule_parser.add_argument("atom_b")
 
+    subparsers.add_parser(
+        "method-info",
+        help="Show the frozen Schema F specification.",
+    )
     smoke_parser = subparsers.add_parser(
         "smoke-test",
         help=(
@@ -223,6 +275,8 @@ def main(
             args.atom_b,
         )
 
+    if args.command == "method-info":
+        return _show_method_info()
     if args.command == "smoke-test":
         return _run_smoke_test(
             args.output_dir
