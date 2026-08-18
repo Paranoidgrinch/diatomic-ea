@@ -10,6 +10,7 @@ from diatomic_ea.config import build_compute_config
 from diatomic_ea.molecule import DiatomicMolecule
 from diatomic_ea.resources import detect_cpu_resources
 from diatomic_ea.schema_f import SCHEMA_F
+from diatomic_ea.states import build_state_scan_plan
 from diatomic_ea.smoke import run_system_smoke_test
 
 
@@ -130,6 +131,60 @@ def _show_method_info() -> int:
 
     return 0
 
+def _show_state_scan(
+    neutral_electrons: int,
+    anion_electrons: int,
+    spin_max: int,
+) -> int:
+    try:
+        plan = build_state_scan_plan(
+            neutral_electrons=neutral_electrons,
+            anion_electrons=anion_electrons,
+            spin_max=spin_max,
+        )
+    except ValueError as exc:
+        print(f"Invalid state scan: {exc}")
+        return 2
+
+    print("Electronic-state scan")
+    print("=====================")
+
+    for scan in (
+        plan.neutral,
+        plan.anion,
+    ):
+        label = (
+            "Neutral"
+            if scan.charge == 0
+            else "Anion"
+        )
+
+        spins = ", ".join(
+            str(state.spin)
+            for state in scan.states
+        )
+
+        multiplicities = ", ".join(
+            str(state.multiplicity)
+            for state in scan.states
+        )
+
+        print()
+        print(
+            f"{label} electrons      : "
+            f"{scan.electron_count}"
+        )
+        print(
+            f"{label} PySCF spins     : "
+            f"{spins}"
+        )
+        print(
+            f"{label} multiplicities  : "
+            f"{multiplicities}"
+        )
+
+    return 0
+
 def _run_smoke_test(
     output_dir: str,
 ) -> int:
@@ -234,6 +289,25 @@ def build_parser() -> argparse.ArgumentParser:
         "method-info",
         help="Show the frozen Schema F specification.",
     )
+    state_parser = subparsers.add_parser(
+        "state-scan",
+        help="Display a neutral/anion spin-state scan.",
+    )
+    state_parser.add_argument(
+        "--neutral-electrons",
+        type=int,
+        required=True,
+    )
+    state_parser.add_argument(
+        "--anion-electrons",
+        type=int,
+        required=True,
+    )
+    state_parser.add_argument(
+        "--spin-max",
+        type=int,
+        required=True,
+    )
     smoke_parser = subparsers.add_parser(
         "smoke-test",
         help=(
@@ -277,6 +351,12 @@ def main(
 
     if args.command == "method-info":
         return _show_method_info()
+    if args.command == "state-scan":
+        return _show_state_scan(
+            args.neutral_electrons,
+            args.anion_electrons,
+            args.spin_max,
+        )
     if args.command == "smoke-test":
         return _run_smoke_test(
             args.output_dir
