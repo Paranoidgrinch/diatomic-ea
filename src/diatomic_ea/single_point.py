@@ -180,11 +180,33 @@ def format_float_for_id(value: float) -> str:
     )
 
 
+def _is_nested_orbital_data(values) -> bool:
+    """Return whether orbital data contains separate spin channels."""
+    try:
+        first = values[0]
+    except (IndexError, KeyError, TypeError):
+        return False
+
+    if isinstance(first, (str, bytes)):
+        return False
+
+    try:
+        iter(first)
+    except TypeError:
+        return False
+
+    return True
+
+
 def compute_frontier_orbitals(
     mo_energy,
     mo_occ,
 ) -> FrontierOrbitals:
-    """Calculate HOMO/LUMO diagnostics from UKS orbital data."""
+    """Calculate HOMO/LUMO diagnostics from orbital data.
+
+    PySCF UKS commonly returns two spin channels. A one-dimensional
+    representation is also accepted for testing and compatible callers.
+    """
     occupied: list[float] = []
     virtual: list[float] = []
 
@@ -192,6 +214,21 @@ def compute_frontier_orbitals(
         energies,
         occupations,
     ) -> None:
+        try:
+            energy_count = len(energies)
+            occupation_count = len(occupations)
+        except TypeError as exc:
+            raise ValueError(
+                "Orbital energies and occupations "
+                "must be iterable."
+            ) from exc
+
+        if energy_count != occupation_count:
+            raise ValueError(
+                "Orbital energies and occupations "
+                "must have equal lengths."
+            )
+
         for energy, occupation in zip(
             energies,
             occupations,
@@ -203,10 +240,26 @@ def compute_frontier_orbitals(
             else:
                 virtual.append(value)
 
-    if isinstance(
-        mo_energy,
-        (list, tuple),
-    ):
+    energies_are_nested = _is_nested_orbital_data(
+        mo_energy
+    )
+    occupations_are_nested = _is_nested_orbital_data(
+        mo_occ
+    )
+
+    if energies_are_nested != occupations_are_nested:
+        raise ValueError(
+            "Orbital energies and occupations "
+            "must have matching shapes."
+        )
+
+    if energies_are_nested:
+        if len(mo_energy) != len(mo_occ):
+            raise ValueError(
+                "Orbital energies and occupations "
+                "must contain the same number of spin channels."
+            )
+
         for energies, occupations in zip(
             mo_energy,
             mo_occ,
@@ -215,6 +268,7 @@ def compute_frontier_orbitals(
                 energies,
                 occupations,
             )
+
     else:
         collect(
             mo_energy,

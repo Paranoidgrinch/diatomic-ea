@@ -88,14 +88,21 @@ def test_frontier_orbitals_for_uks() -> None:
         mo_occ,
     )
 
+    # Occupied alpha orbitals: -0.80, -0.40
+    # Occupied beta orbital:    -0.70
+    # Therefore HOMO = -0.40 Ha.
+    #
+    # Virtual alpha orbital:     0.20
+    # Virtual beta orbitals:    -0.30, 0.25
+    # Therefore LUMO = -0.30 Ha.
     assert result.homo_hartree == pytest.approx(
-        -0.30
+        -0.40
     )
     assert result.lumo_hartree == pytest.approx(
-        0.20
+        -0.30
     )
     assert result.gap_ev == pytest.approx(
-        0.50 * HARTREE_TO_EV
+        0.10 * HARTREE_TO_EV
     )
     assert not result.positive_homo_warning
 
@@ -139,3 +146,21 @@ def test_float_identifier_format(
     assert format_float_for_id(
         value
     ) == expected
+
+def test_mismatched_orbital_lengths_are_rejected() -> None:
+    with pytest.raises(ValueError):
+        compute_frontier_orbitals(
+            [-0.5, -0.2],
+            [1.0],
+        )
+
+
+def test_mismatched_orbital_shapes_are_rejected() -> None:
+    with pytest.raises(ValueError):
+        compute_frontier_orbitals(
+            (
+                [-0.5, 0.2],
+                [-0.4, 0.3],
+            ),
+            [1.0, 0.0],
+        )
