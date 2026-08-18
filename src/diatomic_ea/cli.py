@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from diatomic_ea import __version__
 from diatomic_ea.config import build_compute_config
+from diatomic_ea.molecule import DiatomicMolecule
 from diatomic_ea.resources import detect_cpu_resources
 
 
@@ -49,6 +50,22 @@ def _show_compute_config(workers: int | None) -> int:
     return 0
 
 
+def _show_molecule(atom_a: str, atom_b: str) -> int:
+    try:
+        molecule = DiatomicMolecule(atom_a, atom_b)
+    except ValueError as exc:
+        print(f"Invalid molecule: {exc}")
+        return 2
+
+    print("Diatomic molecule")
+    print("-----------------")
+    print(f"Atom A : {molecule.atom_a}")
+    print(f"Atom B : {molecule.atom_b}")
+    print(f"Formula: {molecule.formula}")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the DiatomicEA command-line parser."""
     parser = argparse.ArgumentParser(
@@ -83,6 +100,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Number of calculation workers to use.",
     )
 
+    molecule_parser = subparsers.add_parser(
+        "molecule",
+        help="Validate and display a diatomic molecule.",
+    )
+    molecule_parser.add_argument("atom_a")
+    molecule_parser.add_argument("atom_b")
+
     return parser
 
 
@@ -96,6 +120,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "compute-config":
         return _show_compute_config(args.workers)
+
+    if args.command == "molecule":
+        return _show_molecule(
+            args.atom_a,
+            args.atom_b,
+        )
 
     parser.print_help()
     return 0
