@@ -6,6 +6,7 @@ import argparse
 from collections.abc import Sequence
 
 from diatomic_ea import __version__
+from diatomic_ea.backend import PySCFBackend
 from diatomic_ea.config import build_compute_config
 from diatomic_ea.molecule import DiatomicMolecule
 from diatomic_ea.resources import detect_cpu_resources
@@ -185,6 +186,66 @@ def _show_state_scan(
 
     return 0
 
+def _show_backend_info() -> int:
+    backend = PySCFBackend()
+    status = backend.availability()
+
+    print("Compute backend")
+    print("===============")
+    print(f"Backend            : {status.backend}")
+    print(
+        "Supported natively : "
+        + ("yes" if status.platform_supported else "no")
+    )
+    print(
+        "Installed          : "
+        + ("yes" if status.installed else "no")
+    )
+    print(
+        "Ready              : "
+        + ("yes" if status.ready else "no")
+    )
+    print(
+        "Version            : "
+        + (status.version or "n/a")
+    )
+    print(f"Status             : {status.message}")
+
+    return 0
+
+
+def _run_backend_smoke_test() -> int:
+    backend = PySCFBackend()
+    report = backend.smoke_test()
+
+    print("PySCF backend smoke test")
+    print("========================")
+
+    if report.passed:
+        print("[PASS]", report.message)
+
+        if report.energy_hartree is not None:
+            print(
+                "Smoke-test energy : "
+                f"{report.energy_hartree:.12f} Ha"
+            )
+
+        print()
+        print(
+            "This smoke result is not a "
+            "scientific EA prediction."
+        )
+        return 0
+
+    print("[UNAVAILABLE/FAIL]", report.message)
+    print()
+    print(
+        "This does not affect the DiatomicEA "
+        "GUI or project-management layer."
+    )
+
+    return 3
+
 def _run_smoke_test(
     output_dir: str,
 ) -> int:
@@ -308,6 +369,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         required=True,
     )
+    subparsers.add_parser(
+        "backend-info",
+        help="Show quantum-chemistry backend availability.",
+    )
+
+    subparsers.add_parser(
+        "backend-smoke-test",
+        help="Run a tiny PySCF installation smoke test.",
+    )
     smoke_parser = subparsers.add_parser(
         "smoke-test",
         help=(
@@ -357,6 +427,11 @@ def main(
             args.anion_electrons,
             args.spin_max,
         )
+    if args.command == "backend-info":
+        return _show_backend_info()
+
+    if args.command == "backend-smoke-test":
+        return _run_backend_smoke_test()
     if args.command == "smoke-test":
         return _run_smoke_test(
             args.output_dir

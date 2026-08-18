@@ -19,6 +19,10 @@ dependencies = [
 dev = [
     "pytest>=8"
 ]
+compute = [
+    "pyscf==2.13.0",
+    "basis-set-exchange"
+]
 
 [project.scripts]
 diatomic-ea = "diatomic_ea.cli:main"
