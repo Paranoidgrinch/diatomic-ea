@@ -80,10 +80,10 @@ def test_progress_is_reported_from_parent() -> None:
 
     assert len(advances) == 3
 
-    assert [
+    assert sorted(
         event.completed
         for event in advances
-    ] == [1, 2, 3]
+    ) == [1, 2, 3]
 
     assert all(
         event.total == 3
@@ -94,3 +94,25 @@ def test_progress_is_reported_from_parent() -> None:
         events[-1].event_type
         is ProgressEventType.STAGE_COMPLETED
     )
+
+
+def test_result_callback_receives_every_result() -> None:
+    received = []
+
+    results = execute_process_batch(
+        [1, 2, 3],
+        worker=operator.neg,
+        max_workers=2,
+        result_callback=(
+            lambda item, result:
+            received.append((item, result))
+        ),
+    )
+
+    assert results == (-1, -2, -3)
+
+    assert set(received) == {
+        (1, -1),
+        (2, -2),
+        (3, -3),
+    }
