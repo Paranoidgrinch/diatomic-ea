@@ -15,6 +15,9 @@ from diatomic_ea.grid import (
     FastGridPlan,
     build_fast_grid_plan_from_electron_counts,
 )
+from diatomic_ea.compute_provenance import (
+    collect_compute_provenance,
+)
 from diatomic_ea.manifest import (
     build_reproducibility_manifest,
     write_reproducibility_manifest,
@@ -141,6 +144,26 @@ class PipelineResult:
     final_record: FinalSchemaFRecord
 
 
+def _resolve_compute_provenance(
+    *,
+    worker: SinglePointWorker,
+    electron_count_resolver: ElectronCountResolver,
+    supplied: dict[str, object] | None,
+) -> dict[str, object] | None:
+    """Collect real provenance only for production compute backends."""
+    if supplied is not None:
+        return supplied
+
+    if (
+        worker is run_platform_single_point
+        and electron_count_resolver
+        is run_platform_electron_count
+    ):
+        return collect_compute_provenance()
+
+    return None
+
+
 def _resolve_electron_counts(
     request: PipelineRequest,
     resolver: ElectronCountResolver,
@@ -207,6 +230,7 @@ def run_schema_f_pipeline(
         run_platform_electron_count
     ),
     worker: SinglePointWorker = run_platform_single_point,
+    compute_provenance: dict[str, object] | None = None,
 ) -> PipelineResult:
     """Run the complete strict Paper-1 Schema F workflow."""
     paths = create_run_paths(
@@ -388,6 +412,15 @@ def run_schema_f_pipeline(
 
         manifest = (
             build_reproducibility_manifest(
+                compute_provenance=(
+                    _resolve_compute_provenance(
+                        worker=worker,
+                        electron_count_resolver=(
+                            electron_count_resolver
+                        ),
+                        supplied=compute_provenance,
+                    )
+                ),
                 estimate=estimate,
                 fast_grid_task_count=(
                     fast_plan.task_count

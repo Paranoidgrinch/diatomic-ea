@@ -143,6 +143,7 @@ def build_reproducibility_manifest(
     qzvpd_task_count: int,
     fast_grid_raw_csv: str | Path | None = None,
     qzvpd_raw_csv: str | Path | None = None,
+    compute_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a complete reproducibility record."""
     if fast_grid_task_count < 0:
@@ -180,6 +181,7 @@ def build_reproducibility_manifest(
             "git_commit": _git_commit(),
             "git_dirty": _git_dirty(),
         },
+        "compute_provenance": compute_provenance,
         "environment": {
             "python_version": (
                 platform.python_version()
