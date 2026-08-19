@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import platform
-import shlex
 from dataclasses import dataclass
 from enum import Enum
 
@@ -14,7 +13,6 @@ from diatomic_ea.schema_f import SCHEMA_F
 from diatomic_ea.wsl import (
     inspect_wsl,
     run_wsl_command,
-    run_wsl_shell,
 )
 
 
@@ -22,6 +20,18 @@ DEFAULT_WSL_DISTRIBUTION = "Ubuntu-24.04"
 
 EXPECTED_PYSCF_VERSION = (
     SCHEMA_F.reference_pyscf_version
+)
+
+WSL_COMPUTE_ROOT = "/opt/diatomic-ea"
+
+WSL_COMPUTE_VENV = (
+    WSL_COMPUTE_ROOT
+    + "/venv"
+)
+
+WSL_COMPUTE_PYTHON = (
+    WSL_COMPUTE_VENV
+    + "/bin/python"
 )
 
 
@@ -229,8 +239,9 @@ def _select_distribution(
     return None
 
 
-def _wsl_probe_program() -> str:
-    program = """
+def _wsl_probe_python() -> str:
+    """Return pure Python source for the WSL environment probe."""
+    return """
 import importlib.metadata as metadata
 import json
 import platform
@@ -245,15 +256,13 @@ payload = {
     ),
 }
 
-print(json.dumps(payload, sort_keys=True))
-""".strip()
-
-    return (
-        'PY="$HOME/.diatomic-ea/venv/bin/python"; '
-        'test -x "$PY" || exit 20; '
-        '"$PY" -c '
-        + shlex.quote(program)
+print(
+    json.dumps(
+        payload,
+        sort_keys=True,
     )
+)
+""".strip()
 
 
 def _extract_payload(
@@ -395,13 +404,17 @@ def _windows_report(
             ),
         )
 
-    result = run_wsl_shell(
-        _wsl_probe_program(),
+    executable_check = run_wsl_command(
+        (
+            "test",
+            "-x",
+            WSL_COMPUTE_PYTHON,
+        ),
         distribution=selected,
-        timeout=60.0,
+        timeout=20.0,
     )
 
-    if result.returncode == 20:
+    if not executable_check.succeeded:
         return ComputeEnvironmentReport(
             state=(
                 ComputeEnvironmentState
@@ -418,6 +431,16 @@ def _windows_report(
                 "compute environment is missing."
             ),
         )
+
+    result = run_wsl_command(
+        (
+            WSL_COMPUTE_PYTHON,
+            "-c",
+            _wsl_probe_python(),
+        ),
+        distribution=selected,
+        timeout=60.0,
+    )
 
     if not result.succeeded:
         detail = (

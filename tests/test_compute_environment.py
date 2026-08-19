@@ -3,10 +3,13 @@
 import json
 from unittest.mock import patch
 
-from diatomic_ea.backend import BackendAvailability
+from diatomic_ea.backend import (
+    BackendAvailability,
+)
 from diatomic_ea.compute_environment import (
     ComputeEnvironmentState,
     EXPECTED_PYSCF_VERSION,
+    WSL_COMPUTE_PYTHON,
     inspect_compute_environment,
 )
 from diatomic_ea.wsl import (
@@ -29,8 +32,18 @@ def wsl_result(
     )
 
 
+def availability(
+    distributions=("Ubuntu-24.04",),
+):
+    return WSLAvailability(
+        executable="wsl.exe",
+        distributions=distributions,
+        message="ready",
+    )
+
+
 def test_windows_without_wsl() -> None:
-    availability = WSLAvailability(
+    state = WSLAvailability(
         executable=None,
         distributions=(),
         message="missing",
@@ -38,7 +51,7 @@ def test_windows_without_wsl() -> None:
 
     with patch(
         "diatomic_ea.compute_environment.inspect_wsl",
-        return_value=availability,
+        return_value=state,
     ):
         report = inspect_compute_environment(
             system_name="Windows"
@@ -53,7 +66,7 @@ def test_windows_without_wsl() -> None:
 
 
 def test_windows_without_distribution() -> None:
-    availability = WSLAvailability(
+    state = WSLAvailability(
         executable="wsl.exe",
         distributions=(),
         message="none",
@@ -61,7 +74,7 @@ def test_windows_without_distribution() -> None:
 
     with patch(
         "diatomic_ea.compute_environment.inspect_wsl",
-        return_value=availability,
+        return_value=state,
     ):
         report = inspect_compute_environment(
             system_name="Windows"
@@ -75,16 +88,10 @@ def test_windows_without_distribution() -> None:
 
 
 def test_windows_launch_failure() -> None:
-    availability = WSLAvailability(
-        executable="wsl.exe",
-        distributions=("Ubuntu-24.04",),
-        message="ready",
-    )
-
     with (
         patch(
             "diatomic_ea.compute_environment.inspect_wsl",
-            return_value=availability,
+            return_value=availability(),
         ),
         patch(
             "diatomic_ea.compute_environment.run_wsl_command",
@@ -106,26 +113,19 @@ def test_windows_launch_failure() -> None:
 
 
 def test_windows_missing_compute_environment() -> None:
-    availability = WSLAvailability(
-        executable="wsl.exe",
-        distributions=("Ubuntu-24.04",),
-        message="ready",
-    )
-
     with (
         patch(
             "diatomic_ea.compute_environment.inspect_wsl",
-            return_value=availability,
+            return_value=availability(),
         ),
         patch(
             "diatomic_ea.compute_environment.run_wsl_command",
-            return_value=wsl_result(),
-        ),
-        patch(
-            "diatomic_ea.compute_environment.run_wsl_shell",
-            return_value=wsl_result(
-                returncode=20
-            ),
+            side_effect=[
+                wsl_result(),
+                wsl_result(
+                    returncode=1
+                ),
+            ],
         ),
     ):
         report = inspect_compute_environment(
@@ -140,12 +140,6 @@ def test_windows_missing_compute_environment() -> None:
 
 
 def test_ready_windows_environment() -> None:
-    availability = WSLAvailability(
-        executable="wsl.exe",
-        distributions=("Ubuntu-24.04",),
-        message="ready",
-    )
-
     payload = json.dumps(
         {
             "python_version": "3.12.3",
@@ -161,18 +155,18 @@ def test_ready_windows_environment() -> None:
     with (
         patch(
             "diatomic_ea.compute_environment.inspect_wsl",
-            return_value=availability,
+            return_value=availability(),
         ),
         patch(
             "diatomic_ea.compute_environment.run_wsl_command",
-            return_value=wsl_result(),
-        ),
-        patch(
-            "diatomic_ea.compute_environment.run_wsl_shell",
-            return_value=wsl_result(
-                stdout=payload
-            ),
-        ),
+            side_effect=[
+                wsl_result(),
+                wsl_result(),
+                wsl_result(
+                    stdout=payload
+                ),
+            ],
+        ) as command,
     ):
         report = inspect_compute_environment(
             system_name="Windows"
@@ -189,6 +183,20 @@ def test_ready_windows_environment() -> None:
         report.pyscf_version
         == EXPECTED_PYSCF_VERSION
     )
+
+    calls = command.call_args_list
+
+    assert calls[1].args[0] == (
+        "test",
+        "-x",
+        WSL_COMPUTE_PYTHON,
+    )
+
+    assert calls[2].args[0][0] == (
+        WSL_COMPUTE_PYTHON
+    )
+
+    assert calls[2].args[0][1] == "-c"
 
 
 def test_ready_native_linux_environment() -> None:

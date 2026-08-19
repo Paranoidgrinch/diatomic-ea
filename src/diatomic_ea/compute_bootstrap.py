@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from diatomic_ea.compute_environment import (
     DEFAULT_WSL_DISTRIBUTION,
     EXPECTED_PYSCF_VERSION,
+    WSL_COMPUTE_ROOT,
+    WSL_COMPUTE_VENV,
     ComputeEnvironmentReport,
     ComputeEnvironmentState,
     inspect_compute_environment,
@@ -101,7 +103,9 @@ def bootstrap_wsl_compute_environment(
             distribution=distribution,
             message=(
                 "Could not update Linux package metadata: "
-                + _failure_detail(apt_update)
+                + _failure_detail(
+                    apt_update
+                )
             ),
             environment=None,
         )
@@ -126,7 +130,9 @@ def bootstrap_wsl_compute_environment(
             distribution=distribution,
             message=(
                 "Could not install Linux Python prerequisites: "
-                + _failure_detail(apt_install)
+                + _failure_detail(
+                    apt_install
+                )
             ),
             environment=None,
         )
@@ -136,14 +142,29 @@ def bootstrap_wsl_compute_environment(
         + EXPECTED_PYSCF_VERSION
     )
 
+    root_path = shlex.quote(
+        WSL_COMPUTE_ROOT
+    )
+
+    venv_path = shlex.quote(
+        WSL_COMPUTE_VENV
+    )
+
+    venv_python = shlex.quote(
+        WSL_COMPUTE_VENV
+        + "/bin/python"
+    )
+
     setup_command = " ".join(
         (
             "set -eu;",
-            'mkdir -p "$HOME/.diatomic-ea";',
-            'python3 -m venv "$HOME/.diatomic-ea/venv";',
-            '"$HOME/.diatomic-ea/venv/bin/python"',
+            "install -d -m 0755",
+            root_path + ";",
+            "python3 -m venv",
+            venv_path + ";",
+            venv_python,
             "-m pip install --upgrade pip;",
-            '"$HOME/.diatomic-ea/venv/bin/python"',
+            venv_python,
             "-m pip install --prefer-binary",
             pyscf_spec,
             shlex.quote(
@@ -155,6 +176,7 @@ def bootstrap_wsl_compute_environment(
     setup = run_wsl_shell(
         setup_command,
         distribution=distribution,
+        user="root",
         timeout=1200.0,
     )
 
@@ -166,7 +188,9 @@ def bootstrap_wsl_compute_environment(
             message=(
                 "Could not create the DiatomicEA "
                 "Python environment: "
-                + _failure_detail(setup)
+                + _failure_detail(
+                    setup
+                )
             ),
             environment=None,
         )
@@ -202,6 +226,7 @@ def bootstrap_wsl_compute_environment(
 
 
 def main() -> int:
+    """Install or validate the Windows WSL compute environment."""
     parser = argparse.ArgumentParser(
         description=(
             "Install or validate the dedicated "
@@ -237,8 +262,20 @@ def main() -> int:
 
     if result.environment is not None:
         print(
+            "Python:",
+            result.environment.python_version
+            or "not available",
+        )
+
+        print(
             "PySCF:",
             result.environment.pyscf_version
+            or "not available",
+        )
+
+        print(
+            "basis-set-exchange:",
+            result.environment.basis_set_exchange_version
             or "not available",
         )
 
