@@ -30,7 +30,7 @@ gui = [
 
 [project.scripts]
 diatomic-ea = "diatomic_ea.cli:main"
-diatomic-ea-gui = "diatomic_ea.gui:main"
+diatomic-ea-gui = "diatomic_ea.desktop_gui:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
