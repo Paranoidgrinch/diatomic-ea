@@ -158,6 +158,7 @@ class DiatomicEAMainWindow(QMainWindow):
         self._active_process_phase: str | None = None
         self._active_job_id: str | None = None
         self._queue_stop_requested = False
+        self._close_when_idle = False
         self._process_output = ""
 
         self.thread_pool = (
@@ -260,6 +261,107 @@ class DiatomicEAMainWindow(QMainWindow):
                 0,
                 self.refresh_compute_status,
             )
+
+    def _request_close_choice(
+        self,
+    ) -> str:
+        """Ask what to do when the user closes during a calculation."""
+
+        dialog = QMessageBox(
+            self
+        )
+
+        dialog.setWindowTitle(
+            "Calculation still running"
+        )
+
+        dialog.setIcon(
+            QMessageBox.Warning
+        )
+
+        dialog.setText(
+            "An electron-affinity calculation is still running."
+        )
+
+        dialog.setInformativeText(
+            (
+                "Closing the application during the calculation "
+                "could interrupt the compute process. "
+                "Keep the window open, or let the current "
+                "calculation finish and close automatically."
+            )
+        )
+
+        keep_button = dialog.addButton(
+            "Keep window open",
+            QMessageBox.RejectRole,
+        )
+
+        exit_button = dialog.addButton(
+            "Exit after current calculation",
+            QMessageBox.AcceptRole,
+        )
+
+        dialog.setDefaultButton(
+            keep_button
+        )
+
+        dialog.exec_()
+
+        if (
+            dialog.clickedButton()
+            is exit_button
+        ):
+            return "exit_after_current"
+
+        return "keep_open"
+
+    def _calculation_process_is_active(
+        self,
+    ) -> bool:
+        """Return whether a real child calculation process is alive."""
+
+        process = self._active_process
+
+        if process is None:
+            return False
+
+        return (
+            process.state()
+            != QProcess.NotRunning
+        )
+
+    def closeEvent(
+        self,
+        event,
+    ) -> None:
+        """Prevent destruction only while a real child process is alive."""
+
+        if not self._calculation_process_is_active():
+            event.accept()
+            return
+
+        choice = (
+            self._request_close_choice()
+        )
+
+        if (
+            choice
+            == "exit_after_current"
+        ):
+            self._queue_stop_requested = True
+            self._close_when_idle = True
+
+            self.progress_message.setText(
+                (
+                    "The application will close after "
+                    "the current calculation finishes."
+                )
+            )
+
+            self._update_queue_buttons()
+
+        event.ignore()
 
     def _build_ui(
         self,
@@ -770,6 +872,12 @@ class DiatomicEAMainWindow(QMainWindow):
 
         self.queue_list.setSelectionMode(
             QListWidget.SingleSelection
+        )
+
+        self.queue_list.currentItemChanged.connect(
+            lambda _current, _previous: (
+                self._update_queue_buttons()
+            )
         )
 
         layout.addWidget(
@@ -1677,27 +1785,72 @@ class DiatomicEAMainWindow(QMainWindow):
             self._has_waiting_jobs()
         )
 
+        selected_queued = False
+
+        selected_id = (
+            self._selected_job_id()
+        )
+
+        if selected_id is not None:
+            try:
+                selected_job = (
+                    self.calculation_queue.get(
+                        selected_id
+                    )
+                )
+
+            except KeyError:
+                selected_job = None
+
+            if selected_job is not None:
+                selected_queued = (
+                    selected_job.status
+                    is JobStatus.QUEUED
+                )
+
+        self.queue_up_button.setEnabled(
+            selected_queued
+        )
+
+        self.queue_down_button.setEnabled(
+            selected_queued
+        )
+
+        self.queue_remove_button.setEnabled(
+            selected_queued
+        )
+
+        self.add_queue_button.setEnabled(
+            not self._close_when_idle
+        )
+
         self.start_queue_button.setEnabled(
             waiting
             and not active
             and not self._queue_stop_requested
+            and not self._close_when_idle
         )
 
         self.stop_queue_button.setEnabled(
             active
             and not self._queue_stop_requested
+            and not self._close_when_idle
         )
 
         self.resume_queue_button.setEnabled(
             waiting
             and not active
             and self._queue_stop_requested
+            and not self._close_when_idle
         )
 
     def start_queue(
         self,
     ) -> None:
-        if self._active_job_id is not None:
+        if (
+            self._active_job_id is not None
+            or self._close_when_idle
+        ):
             return
 
         self._queue_stop_requested = False
@@ -1707,7 +1860,10 @@ class DiatomicEAMainWindow(QMainWindow):
     def resume_queue(
         self,
     ) -> None:
-        if self._active_job_id is not None:
+        if (
+            self._active_job_id is not None
+            or self._close_when_idle
+        ):
             return
 
         self._queue_stop_requested = False
@@ -2133,6 +2289,34 @@ class DiatomicEAMainWindow(QMainWindow):
         )
 
         self.refresh_queue_view()
+
+        if self._close_when_idle:
+            self._close_when_idle = False
+            self._queue_stop_requested = True
+
+            self.active_job_label.setText(
+                "Calculation finished"
+            )
+
+            self.stage_label.setText(
+                "Idle"
+            )
+
+            self.progress_message.setText(
+                (
+                    "Current calculation finished. "
+                    "Closing DiatomicEA."
+                )
+            )
+
+            self._update_queue_buttons()
+
+            QTimer.singleShot(
+                0,
+                self.close,
+            )
+
+            return
 
         if self._queue_stop_requested:
             self.active_job_label.setText(
