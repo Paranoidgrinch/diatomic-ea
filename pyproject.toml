@@ -24,8 +24,13 @@ compute = [
     "basis-set-exchange"
 ]
 
+gui = [
+    "PyQt5>=5.15.11,<6"
+]
+
 [project.scripts]
 diatomic-ea = "diatomic_ea.cli:main"
+diatomic-ea-gui = "diatomic_ea.gui:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
