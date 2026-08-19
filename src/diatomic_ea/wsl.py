@@ -153,12 +153,18 @@ def _run_windows_command(
     command: Sequence[str],
     *,
     timeout: float,
+    input_text: str | None = None,
 ) -> WSLCommandResult:
     """Run a Windows command without allowing timeout exceptions to escape."""
     try:
         completed = subprocess.run(
             list(command),
             check=False,
+            input=(
+                None
+                if input_text is None
+                else input_text.encode("utf-8")
+            ),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout,
@@ -367,6 +373,7 @@ def run_wsl_command(
     *,
     distribution: str | None = None,
     user: str | None = None,
+    input_text: str | None = None,
     timeout: float = 60.0,
     check: bool = False,
 ) -> WSLCommandResult:
@@ -424,6 +431,7 @@ def run_wsl_command(
     result = _run_windows_command(
         command,
         timeout=timeout,
+        input_text=input_text,
     )
 
     if (
