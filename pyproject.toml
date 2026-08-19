@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diatomic-ea"
-version = "1.0.0rc1"
+version = "1.0.0"
 description = "Fast and reproducible electron-affinity calculations for diatomic molecules"
 readme = "README.md"
 requires-python = ">=3.10"

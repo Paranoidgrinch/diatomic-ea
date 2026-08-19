@@ -6,7 +6,7 @@ DiatomicEA is an open-source desktop and command-line application for automated 
 
 ## Release status
 
-Version **1.0.0rc1** is the first release candidate. The scientific workflow and desktop calculation path are feature-complete; the final release audit remains before v1.0.0.
+Version **1.0.0** is the first stable release. The scientific workflow, desktop calculation path, Windows/WSL distribution, and native Linux distribution have passed the release audit.
 
 ## Platforms
 
