@@ -1,5 +1,6 @@
 """Tests for the WSL command bridge."""
 
+import subprocess
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -7,6 +8,7 @@ import pytest
 
 from diatomic_ea.wsl import (
     WSLCommandError,
+    WSL_TIMEOUT_RETURN_CODE,
     decode_wsl_output,
     inspect_wsl,
     list_wsl_distributions,
@@ -50,6 +52,15 @@ def test_decode_utf16_output() -> None:
     ) == "Ubuntu\nDebian\n"
 
 
+def test_decode_string_output() -> None:
+    assert (
+        decode_wsl_output(
+            "already decoded"
+        )
+        == "already decoded"
+    )
+
+
 def test_list_wsl_distributions() -> None:
     output = (
         "Ubuntu-24.04\nDebian\n"
@@ -78,6 +89,32 @@ def test_list_wsl_distributions() -> None:
     )
 
 
+def test_list_timeout_returns_empty_tuple() -> None:
+    timeout = subprocess.TimeoutExpired(
+        cmd=[
+            "wsl.exe",
+            "--list",
+            "--quiet",
+        ],
+        timeout=15.0,
+    )
+
+    with (
+        patch(
+            "diatomic_ea.wsl.shutil.which",
+            return_value="wsl.exe",
+        ),
+        patch(
+            "diatomic_ea.wsl.subprocess.run",
+            side_effect=timeout,
+        ),
+    ):
+        assert (
+            list_wsl_distributions()
+            == ()
+        )
+
+
 def test_inspect_wsl_without_executable() -> None:
     with patch(
         "diatomic_ea.wsl.shutil.which",
@@ -87,7 +124,78 @@ def test_inspect_wsl_without_executable() -> None:
 
     assert not availability.ready
     assert not availability.executable_found
+    assert not availability.timed_out
     assert availability.distributions == ()
+
+
+def test_inspect_wsl_timeout_is_reported() -> None:
+    timeout = subprocess.TimeoutExpired(
+        cmd=[
+            "wsl.exe",
+            "--list",
+            "--quiet",
+        ],
+        timeout=5.0,
+    )
+
+    with (
+        patch(
+            "diatomic_ea.wsl.shutil.which",
+            return_value="wsl.exe",
+        ),
+        patch(
+            "diatomic_ea.wsl.subprocess.run",
+            side_effect=timeout,
+        ),
+    ):
+        availability = inspect_wsl(
+            timeout=5.0
+        )
+
+    assert not availability.ready
+    assert availability.executable_found
+    assert availability.timed_out
+
+    assert (
+        "timed out after 5 seconds"
+        in availability.message
+    )
+
+
+def test_run_command_timeout_is_result() -> None:
+    timeout = subprocess.TimeoutExpired(
+        cmd=[
+            "wsl.exe",
+            "--",
+            "uname",
+        ],
+        timeout=2.0,
+        output=b"partial",
+        stderr=b"",
+    )
+
+    with (
+        patch(
+            "diatomic_ea.wsl.shutil.which",
+            return_value="wsl.exe",
+        ),
+        patch(
+            "diatomic_ea.wsl.subprocess.run",
+            side_effect=timeout,
+        ),
+    ):
+        result = run_wsl_command(
+            ("uname",),
+            timeout=2.0,
+        )
+
+    assert result.timed_out
+    assert (
+        result.returncode
+        == WSL_TIMEOUT_RETURN_CODE
+    )
+    assert result.stdout == "partial"
+    assert "timed out" in result.stderr
 
 
 def test_run_default_distribution_command() -> None:
@@ -121,6 +229,40 @@ def test_run_default_distribution_command() -> None:
         "uname",
         "-s",
     ]
+
+
+def test_checked_timeout_raises() -> None:
+    timeout = subprocess.TimeoutExpired(
+        cmd=[
+            "wsl.exe",
+            "--",
+            "sleep",
+            "10",
+        ],
+        timeout=1.0,
+    )
+
+    with (
+        patch(
+            "diatomic_ea.wsl.shutil.which",
+            return_value="wsl.exe",
+        ),
+        patch(
+            "diatomic_ea.wsl.subprocess.run",
+            side_effect=timeout,
+        ),
+    ):
+        with pytest.raises(
+            WSLCommandError
+        ):
+            run_wsl_command(
+                (
+                    "sleep",
+                    "10",
+                ),
+                timeout=1.0,
+                check=True,
+            )
 
 
 def test_run_named_distribution_command() -> None:

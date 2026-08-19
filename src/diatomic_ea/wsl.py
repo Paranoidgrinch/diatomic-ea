@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from typing import Sequence
 
 
+WSL_TIMEOUT_RETURN_CODE = 124
+
+
 @dataclass(frozen=True, slots=True)
 class WSLCommandResult:
     """Captured result of one WSL command."""
@@ -21,6 +24,13 @@ class WSLCommandResult:
     def succeeded(self) -> bool:
         return self.returncode == 0
 
+    @property
+    def timed_out(self) -> bool:
+        return (
+            self.returncode
+            == WSL_TIMEOUT_RETURN_CODE
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class WSLAvailability:
@@ -29,6 +39,7 @@ class WSLAvailability:
     executable: str | None
     distributions: tuple[str, ...]
     message: str
+    timed_out: bool = False
 
     @property
     def executable_found(self) -> bool:
@@ -39,6 +50,7 @@ class WSLAvailability:
         return (
             self.executable_found
             and bool(self.distributions)
+            and not self.timed_out
         )
 
 
@@ -67,9 +79,18 @@ class WSLCommandError(RuntimeError):
 
 
 def decode_wsl_output(
-    data: bytes,
+    data: bytes | str | None,
 ) -> str:
     """Decode WSL output captured through Windows pipes."""
+    if data is None:
+        return ""
+
+    if isinstance(
+        data,
+        str,
+    ):
+        return data
+
     if not data:
         return ""
 
@@ -133,13 +154,48 @@ def _run_windows_command(
     *,
     timeout: float,
 ) -> WSLCommandResult:
-    completed = subprocess.run(
-        list(command),
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=timeout,
-    )
+    """Run a Windows command without allowing timeout exceptions to escape."""
+    try:
+        completed = subprocess.run(
+            list(command),
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+        )
+
+    except subprocess.TimeoutExpired as exc:
+        stdout = decode_wsl_output(
+            exc.stdout
+        )
+
+        stderr = decode_wsl_output(
+            exc.stderr
+        ).strip()
+
+        timeout_message = (
+            "Command timed out after "
+            f"{timeout:g} seconds."
+        )
+
+        if stderr:
+            stderr = (
+                stderr
+                + "\n"
+                + timeout_message
+            )
+
+        if not stderr:
+            stderr = timeout_message
+
+        return WSLCommandResult(
+            command=tuple(command),
+            returncode=(
+                WSL_TIMEOUT_RETURN_CODE
+            ),
+            stdout=stdout,
+            stderr=stderr,
+        )
 
     return WSLCommandResult(
         command=tuple(command),
@@ -153,17 +209,16 @@ def _run_windows_command(
     )
 
 
-def list_wsl_distributions(
+def _distribution_list_result(
     *,
-    timeout: float = 15.0,
-) -> tuple[str, ...]:
-    """Return installed WSL distribution names."""
+    timeout: float,
+) -> WSLCommandResult | None:
     executable = wsl_executable()
 
     if executable is None:
-        return ()
+        return None
 
-    result = _run_windows_command(
+    return _run_windows_command(
         (
             executable,
             "--list",
@@ -172,12 +227,13 @@ def list_wsl_distributions(
         timeout=timeout,
     )
 
-    if not result.succeeded:
-        return ()
 
+def _parse_distribution_names(
+    stdout: str,
+) -> tuple[str, ...]:
     names: list[str] = []
 
-    for raw_line in result.stdout.splitlines():
+    for raw_line in stdout.splitlines():
         name = (
             raw_line
             .replace("\x00", "")
@@ -193,11 +249,35 @@ def list_wsl_distributions(
     return tuple(names)
 
 
+def list_wsl_distributions(
+    *,
+    timeout: float = 15.0,
+) -> tuple[str, ...]:
+    """Return installed WSL distribution names.
+
+    Failure or timeout returns an empty tuple. Use inspect_wsl()
+    when diagnostic status information is required.
+    """
+    result = _distribution_list_result(
+        timeout=timeout
+    )
+
+    if result is None:
+        return ()
+
+    if not result.succeeded:
+        return ()
+
+    return _parse_distribution_names(
+        result.stdout
+    )
+
+
 def inspect_wsl(
     *,
     timeout: float = 15.0,
 ) -> WSLAvailability:
-    """Inspect WSL without starting a scientific calculation."""
+    """Inspect WSL without allowing a hung service to crash the app."""
     executable = wsl_executable()
 
     if executable is None:
@@ -207,10 +287,57 @@ def inspect_wsl(
             message=(
                 "WSL executable was not found."
             ),
+            timed_out=False,
         )
 
-    distributions = list_wsl_distributions(
+    result = _distribution_list_result(
         timeout=timeout
+    )
+
+    if result is None:
+        return WSLAvailability(
+            executable=None,
+            distributions=(),
+            message=(
+                "WSL executable was not found."
+            ),
+            timed_out=False,
+        )
+
+    if result.timed_out:
+        return WSLAvailability(
+            executable=executable,
+            distributions=(),
+            message=(
+                "WSL is installed, but distribution "
+                "discovery timed out after "
+                f"{timeout:g} seconds. "
+                "The WSL service may be unresponsive."
+            ),
+            timed_out=True,
+        )
+
+    if not result.succeeded:
+        detail = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or "unknown WSL error"
+        )
+
+        return WSLAvailability(
+            executable=executable,
+            distributions=(),
+            message=(
+                "WSL distribution discovery failed: "
+                + detail
+            ),
+            timed_out=False,
+        )
+
+    distributions = (
+        _parse_distribution_names(
+            result.stdout
+        )
     )
 
     if not distributions:
@@ -221,6 +348,7 @@ def inspect_wsl(
                 "WSL is installed but no Linux "
                 "distribution was detected."
             ),
+            timed_out=False,
         )
 
     return WSLAvailability(
@@ -230,6 +358,7 @@ def inspect_wsl(
             "WSL is available with "
             f"{len(distributions)} distribution(s)."
         ),
+        timed_out=False,
     )
 
 
