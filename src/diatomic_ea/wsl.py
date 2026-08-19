@@ -366,6 +366,7 @@ def run_wsl_command(
     arguments: Sequence[str],
     *,
     distribution: str | None = None,
+    user: str | None = None,
     timeout: float = 60.0,
     check: bool = False,
 ) -> WSLCommandResult:
@@ -382,9 +383,7 @@ def run_wsl_command(
     ]
 
     if distribution is not None:
-        distribution = (
-            distribution.strip()
-        )
+        distribution = distribution.strip()
 
         if not distribution:
             raise ValueError(
@@ -395,6 +394,21 @@ def run_wsl_command(
             [
                 "--distribution",
                 distribution,
+            ]
+        )
+
+    if user is not None:
+        user = user.strip()
+
+        if not user:
+            raise ValueError(
+                "user must not be empty."
+            )
+
+        command.extend(
+            [
+                "--user",
+                user,
             ]
         )
 
@@ -427,6 +441,7 @@ def run_wsl_shell(
     shell_command: str,
     *,
     distribution: str | None = None,
+    user: str | None = None,
     timeout: float = 60.0,
     check: bool = False,
 ) -> WSLCommandResult:
@@ -436,6 +451,18 @@ def run_wsl_shell(
             "shell_command must not be empty."
         )
 
+    if user is None:
+        return run_wsl_command(
+            (
+                "sh",
+                "-lc",
+                shell_command,
+            ),
+            distribution=distribution,
+            timeout=timeout,
+            check=check,
+        )
+
     return run_wsl_command(
         (
             "sh",
@@ -443,6 +470,7 @@ def run_wsl_shell(
             shell_command,
         ),
         distribution=distribution,
+        user=user,
         timeout=timeout,
         check=check,
     )
