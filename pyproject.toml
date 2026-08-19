@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "diatomic-ea"
-version = "0.1.0.dev0"
+version = "1.0.0rc1"
 description = "Fast and reproducible electron-affinity calculations for diatomic molecules"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,6 +15,8 @@ dependencies = [
     "psutil>=5.9"
 ]
 
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 [project.optional-dependencies]
 dev = [
     "pytest>=8"
@@ -31,6 +33,11 @@ gui = [
 [project.scripts]
 diatomic-ea = "diatomic_ea.cli:main"
 diatomic-ea-gui = "diatomic_ea.desktop_gui:main"
+
+[project.urls]
+Homepage = "https://github.com/Paranoidgrinch/diatomic-ea"
+Repository = "https://github.com/Paranoidgrinch/diatomic-ea"
+Issues = "https://github.com/Paranoidgrinch/diatomic-ea/issues"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
