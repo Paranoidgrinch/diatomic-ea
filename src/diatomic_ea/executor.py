@@ -17,7 +17,9 @@ from diatomic_ea.progress import (
 )
 from diatomic_ea.single_point import (
     SinglePointResult,
-    run_pyscf_single_point,
+)
+from diatomic_ea.single_point_adapter import (
+    run_platform_single_point,
 )
 
 
@@ -162,7 +164,7 @@ def execute_fast_grid(
     """Execute every single point in a fast-grid plan."""
     return execute_process_batch(
         plan.tasks,
-        worker=run_pyscf_single_point,
+        worker=run_platform_single_point,
         max_workers=max_workers,
         reporter=reporter,
         stage=CalculationStage.FAST_GRID,

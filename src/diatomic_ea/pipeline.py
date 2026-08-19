@@ -56,11 +56,15 @@ from diatomic_ea.schema_f_statistics import (
     SchemaFEstimate,
     estimate_schema_f,
 )
+from diatomic_ea.electron_count_adapter import (
+    run_platform_electron_count,
+)
 from diatomic_ea.single_point import (
     SinglePointResult,
     SinglePointTask,
-    determine_electron_count,
-    run_pyscf_single_point,
+)
+from diatomic_ea.single_point_adapter import (
+    run_platform_single_point,
 )
 from diatomic_ea.states import ChargeState
 
@@ -200,9 +204,9 @@ def run_schema_f_pipeline(
     output_root: str | Path = "runs",
     reporter: ProgressReporter | None = None,
     electron_count_resolver: ElectronCountResolver = (
-        determine_electron_count
+        run_platform_electron_count
     ),
-    worker: SinglePointWorker = run_pyscf_single_point,
+    worker: SinglePointWorker = run_platform_single_point,
 ) -> PipelineResult:
     """Run the complete strict Paper-1 Schema F workflow."""
     paths = create_run_paths(

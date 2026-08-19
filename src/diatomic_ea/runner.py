@@ -20,7 +20,9 @@ from diatomic_ea.single_point import (
     SinglePointResult,
     SinglePointStatus,
     SinglePointTask,
-    run_pyscf_single_point,
+)
+from diatomic_ea.single_point_adapter import (
+    run_platform_single_point,
 )
 
 
@@ -81,7 +83,7 @@ def execute_fast_grid_resumable(
     worker: Callable[
         [SinglePointTask],
         SinglePointResult,
-    ] = run_pyscf_single_point,
+    ] = run_platform_single_point,
 ) -> FastGridRunSummary:
     """Execute unfinished fast-grid tasks and persist each result."""
     total = plan.task_count
@@ -156,7 +158,7 @@ def execute_qzvpd_resumable(
     worker: Callable[
         [SinglePointTask],
         SinglePointResult,
-    ] = run_pyscf_single_point,
+    ] = run_platform_single_point,
 ) -> QZVPDRunSummary:
     """Execute unfinished QZVPD tasks and persist each result."""
     total = plan.task_count
