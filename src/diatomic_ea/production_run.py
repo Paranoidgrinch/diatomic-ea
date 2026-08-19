@@ -15,11 +15,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from time import monotonic
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 from diatomic_ea.compute_provenance import (
     collect_compute_provenance,
@@ -41,12 +42,16 @@ from diatomic_ea.progress import (
     ProgressEventType,
     ProgressReporter,
 )
+from diatomic_ea.progress_metrics import (
+    ProgressRateTracker,
+    format_duration,
+)
 from diatomic_ea.schema_f import (
     SCHEMA_F,
 )
 
 
-PRODUCTION_STATUS_VERSION = 1
+PRODUCTION_STATUS_VERSION = 2
 
 PRODUCTION_STATUS_FILENAME = (
     "production_status.json"
@@ -662,6 +667,9 @@ def _base_status(
         "completed": None,
         "total": None,
         "percent": None,
+        "tasks_per_second": None,
+        "eta_seconds": None,
+        "stage_elapsed_seconds": None,
         "message": "",
         "updated_at_utc": now,
         "worker_wheel_sha256": (
@@ -681,18 +689,44 @@ def _base_status(
 
 
 class _ConsoleProgress:
-    """Persist every event while printing throttled task progress."""
+    """Persist progress and expose rate/ETA telemetry for CLI and GUI."""
 
     def __init__(
         self,
         validated: ValidatedProductionRun,
         status: dict[str, Any],
+        *,
+        clock: Callable[[], float] = monotonic,
+        print_interval_seconds: float = 2.0,
     ) -> None:
+        if print_interval_seconds <= 0:
+            raise ValueError(
+                "print_interval_seconds must be positive."
+            )
+
         self.validated = validated
         self.status = status
+
+        self._clock = clock
+
+        self._print_interval_seconds = float(
+            print_interval_seconds
+        )
+
+        self._metrics = ProgressRateTracker(
+            window_seconds=30.0,
+            minimum_elapsed_seconds=0.5,
+            clock=clock,
+        )
+
         self._last_bucket: dict[
             str,
             int,
+        ] = {}
+
+        self._last_print_at: dict[
+            str,
+            float,
         ] = {}
 
     def _write_status(
@@ -711,6 +745,13 @@ class _ConsoleProgress:
         self,
         event: ProgressEvent,
     ) -> None:
+        now = self._clock()
+
+        metrics = self._metrics.update(
+            event,
+            now=now,
+        )
+
         event_payload = {
             "timestamp_utc": (
                 _utc_now()
@@ -730,6 +771,15 @@ class _ConsoleProgress:
             "total": event.total,
             "percent": (
                 event.percent
+            ),
+            "tasks_per_second": (
+                metrics.tasks_per_second
+            ),
+            "eta_seconds": (
+                metrics.eta_seconds
+            ),
+            "stage_elapsed_seconds": (
+                metrics.elapsed_seconds
             ),
             "message": (
                 event.message
@@ -763,6 +813,18 @@ class _ConsoleProgress:
             "percent"
         ] = event.percent
 
+        self.status[
+            "tasks_per_second"
+        ] = metrics.tasks_per_second
+
+        self.status[
+            "eta_seconds"
+        ] = metrics.eta_seconds
+
+        self.status[
+            "stage_elapsed_seconds"
+        ] = metrics.elapsed_seconds
+
         should_print = (
             event.event_type
             is not ProgressEventType.ADVANCE
@@ -772,35 +834,66 @@ class _ConsoleProgress:
             should_print
         )
 
+        stage_name = (
+            ""
+            if event.stage is None
+            else event.stage.value
+        )
+
         if (
             event.event_type
             is ProgressEventType.ADVANCE
             and event.stage is not None
             and event.percent is not None
         ):
-            stage_name = (
-                event.stage.value
-            )
-
             bucket = int(
                 event.percent
                 // 5
             )
 
-            previous = (
+            previous_bucket = (
                 self._last_bucket.get(
                     stage_name
                 )
             )
 
-            if (
-                previous != bucket
-                or event.completed
+            previous_print = (
+                self._last_print_at.get(
+                    stage_name
+                )
+            )
+
+            interval_due = (
+                previous_print is None
+                or (
+                    now
+                    - previous_print
+                )
+                >= self._print_interval_seconds
+            )
+
+            bucket_due = (
+                previous_bucket
+                != bucket
+            )
+
+            final_update = (
+                event.completed
                 == event.total
+            )
+
+            if (
+                interval_due
+                or bucket_due
+                or final_update
             ):
                 self._last_bucket[
                     stage_name
                 ] = bucket
+
+                self._last_print_at[
+                    stage_name
+                ] = now
 
                 should_print = True
                 should_write_status = True
@@ -824,11 +917,36 @@ class _ConsoleProgress:
                 and event.total is not None
                 and event.percent is not None
             ):
-                print(
+                line = (
                     stage_text
                     + f"{event.completed}/"
                     + f"{event.total} "
                     + f"({event.percent:.1f}%)"
+                )
+
+                if (
+                    metrics.tasks_per_second
+                    is not None
+                ):
+                    line += (
+                        " | "
+                        + f"{metrics.tasks_per_second:.2f}"
+                        + " tasks/s"
+                    )
+
+                if (
+                    metrics.eta_seconds
+                    is not None
+                ):
+                    line += (
+                        " | ETA "
+                        + format_duration(
+                            metrics.eta_seconds
+                        )
+                    )
+
+                print(
+                    line
                 )
 
             elif event.message:
