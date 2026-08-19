@@ -54,7 +54,7 @@ def test_status_snapshot_formats_telemetry() -> None:
 
     assert (
         snapshot.stage_text
-        == "Fast Grid"
+        == "Initial geometry scan"
     )
 
 
@@ -72,7 +72,7 @@ def test_qzvpd_stage_name_is_formatted() -> None:
 
     assert (
         snapshot.stage_text
-        == "QZVPD Refinement"
+        == "High-accuracy refinement"
     )
 
 

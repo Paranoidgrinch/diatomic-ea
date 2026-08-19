@@ -1,4 +1,4 @@
-"""Qt-independent state helpers for the DiatomicEA GUI."""
+"""Qt-independent presentation state for the DiatomicEA GUI."""
 
 from __future__ import annotations
 
@@ -9,6 +9,126 @@ from pathlib import Path
 from diatomic_ea.progress_metrics import (
     format_duration,
 )
+
+
+_STAGE_LABELS = {
+    "preparation": "Preparing calculation",
+    "fast-grid": "Initial geometry scan",
+    "fast-grid-analysis": "Geometry analysis",
+    "qzvpd-refinement": "High-accuracy refinement",
+    "statistical-ea": "EA prediction",
+    "export": "Saving results",
+}
+
+
+_MESSAGE_REPLACEMENTS = (
+    (
+        "Full Schema F production run",
+        "Electron-affinity calculation",
+    ),
+    (
+        "complete Schema F calculation",
+        "electron-affinity calculation",
+    ),
+    (
+        "Complete Schema F calculation",
+        "Electron-affinity calculation",
+    ),
+    (
+        "Schema F statistical estimate",
+        "EA prediction",
+    ),
+    (
+        "Schema F calculation",
+        "electron-affinity calculation",
+    ),
+    (
+        "evaluating Schema F",
+        "calculating the EA prediction",
+    ),
+    (
+        "QZVPD refinement",
+        "high-accuracy refinement",
+    ),
+    (
+        "QZVPD candidate",
+        "high-accuracy candidate",
+    ),
+    (
+        "QZVPD",
+        "high-accuracy",
+    ),
+    (
+        "Fast-grid",
+        "Initial geometry scan",
+    ),
+    (
+        "fast-grid",
+        "initial geometry scan",
+    ),
+    (
+        "Fast grid",
+        "Initial geometry scan",
+    ),
+    (
+        "fast grid",
+        "initial geometry scan",
+    ),
+)
+
+
+def stage_display_name(
+    stage: str | None,
+) -> str:
+    """Return natural English for an internal calculation stage."""
+
+    if not stage:
+        return "Idle"
+
+    normalized = (
+        stage.strip()
+        .casefold()
+        .replace(
+            "_",
+            "-",
+        )
+    )
+
+    known = _STAGE_LABELS.get(
+        normalized
+    )
+
+    if known is not None:
+        return known
+
+    return " ".join(
+        word.title()
+        for word
+        in normalized.split(
+            "-"
+        )
+    )
+
+
+def humanize_status_message(
+    message: str,
+) -> str:
+    """Remove implementation-specific terminology from GUI messages."""
+
+    result = str(
+        message
+    )
+
+    for (
+        internal,
+        visible,
+    ) in _MESSAGE_REPLACEMENTS:
+        result = result.replace(
+            internal,
+            visible,
+        )
+
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,28 +204,8 @@ class ProductionStatusSnapshot:
 
     @property
     def stage_text(self) -> str:
-        if not self.stage:
-            return "Idle"
-
-        words = (
+        return stage_display_name(
             self.stage
-            .replace(
-                "_",
-                "-",
-            )
-            .split(
-                "-"
-            )
-        )
-
-        return " ".join(
-            (
-                "QZVPD"
-                if word.casefold()
-                == "qzvpd"
-                else word.title()
-            )
-            for word in words
         )
 
 
@@ -148,7 +248,7 @@ def production_status_from_mapping(
     *,
     source_path: str | None = None,
 ) -> ProductionStatusSnapshot:
-    """Normalize persisted telemetry for presentation."""
+    """Normalize persisted calculation telemetry for presentation."""
 
     stage_value = payload.get(
         "stage"
@@ -202,10 +302,12 @@ def production_status_from_mapping(
                 "stage_elapsed_seconds"
             )
         ),
-        message=str(
-            payload.get(
-                "message",
-                "",
+        message=humanize_status_message(
+            str(
+                payload.get(
+                    "message",
+                    "",
+                )
             )
         ),
         updated_at_utc=(
@@ -222,7 +324,7 @@ def production_status_from_mapping(
 def read_production_status(
     path: str | Path,
 ) -> ProductionStatusSnapshot:
-    """Read one atomically written production status file."""
+    """Read one atomically written calculation-status file."""
 
     source = Path(
         path
@@ -239,7 +341,7 @@ def read_production_status(
         json.JSONDecodeError,
     ) as exc:
         raise ValueError(
-            "Could not read production status: "
+            "Could not read calculation status: "
             f"{source}"
         ) from exc
 
@@ -248,7 +350,7 @@ def read_production_status(
         dict,
     ):
         raise ValueError(
-            "Production status must contain "
+            "Calculation status must contain "
             "a JSON object."
         )
 
@@ -263,7 +365,7 @@ def read_production_status(
 def discover_latest_status(
     output_root: str | Path,
 ) -> Path | None:
-    """Find the most recently modified production status."""
+    """Find the most recently modified calculation status."""
 
     root = Path(
         output_root
